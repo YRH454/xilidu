@@ -1,6 +1,31 @@
 # 农业病害细粒度图文对齐：BLIP 消融与配置规划
 
-状态：讨论草案，2026-11-02。这里只规划，不包含可执行训练代码、模型权重或数据；尚未下载模型、安装依赖或开展实验。后续实现与正式运行前需冻结方案并验证。
+状态：2026-11-02 第一版 A–D 整图实验代码。E/F 局部短语—区域部分仍是规划，未实现；数据和模型权重不提交仓库。下文“候选”部分为研究设计，不代表已经取得结果。
+
+## 快速运行与当前实现
+
+当前只实现香蕉 A–D，配置见 `configs/banana.yaml`，命令在仓库根目录执行：
+
+```powershell
+$env:PYTHONUTF8='1'
+python -m unittest discover -s tests -v
+python -m src.train --config configs/banana.yaml --group C --smoke
+python -u -m src.run_all --config configs/banana.yaml
+```
+
+`--smoke` 只做两个小批次和少量验证，不保存正式结果；它把文本 padding 到上限以检查显存。正式运行按 A、B、C、D 顺序、单卡进行；发生错误即停止，输出目录存在时不会直接覆盖。队列冻结配置并记录代码、processor、索引和模型哈希，在每组启动前检查，发生变化则停止，避免不同组悄悄使用不同版本。Windows 队列运行期间临时阻止空闲自动睡眠，结束时恢复，不修改电源计划、屏幕设置，也不能阻止手动睡眠或关机。中断后可用 `python -u -m src.run_all --config configs/banana.yaml --resume` 跳过已完成组并从已保存 epoch 继续；如果第一轮 epoch 尚未完成而没有检查点，会停止并提示手动处理，不自动覆盖。只加载自己生成、可信的本地 `.pt` 检查点。
+
+当前数据目录、模型目录、输出目录均在仓库外，并通过相对路径指定。需先自行准备对应目录和权重；不要将图片、原文、权重、运行结果或密钥提交 Git。使用 CUDA 版 PyTorch 与本机驱动匹配；`requirements.txt` 中的 torch 版本号不负责自动选择正确 CUDA 轮子。
+
+当前采用源仓库 `Salesforce/blip-itm-base-coco` revision `bed8ad38cb2d04a5a4bdf2d071b3c3c0a4aa724c`，其声明的许可为 BSD-3-Clause。原始 `pytorch_model.bin` SHA-256 为 `017fb3e7f4e125f13a8a4717f1402dbe0d0bb877474b4a203db13a4447b0227f`；本机经 PyTorch 2.6 CPU、`weights_only=True` 转换的 `model.safetensors` SHA-256 固定于配置。由于本机 Hugging Face 直连不可用，实际通过 `hf-mirror.com` 下载并按该镜像的 LFS 摘要核验；不是独立从官方站二次核验。转换工具 `tools/convert_checkpoint.py` 只接受 PyTorch >=2.6 和指定哈希；本项目训练仍使用原有 CUDA 环境，不绕过 Transformers 的旧版 `torch.load` 安全限制。
+
+**A–D 的整图 ITM 负例假设：**B/C/D 的正例是图片与其自己的文本；负例在同一训练集内从不同来源类别采一条文本，每张图一个负例，正负项合并计算二分类交叉熵（匹配标签 1、不匹配标签 0）。同类不被采为负。类别标签被用于负例采样，包含 D 组；它不作为 D 的输入文本，也不用于测试分类。对于 C/D，跨类文字仍可能准确描述当前图片，所以这是一种**有假负例风险的类别辅助噪声采样**，不是人工确认的语义负例，也不适用于尚未定稿的局部 E 组。B/C/D 使用相同采样协议与随机种子。后续研究须单独评估负例策略的影响。
+
+首轮固定 seed=42、最多 8 epoch、图像批次 8、累积 2、2 个数据读取进程、FP16、最大 320 token，验证集图像单输入 Macro-F1 选模；最终测试也只输入图片。该轮是单种子探索，不足以作为稳定性结论；C/D 文字更长、计算量不同，须报告训练时间。LoRA 采用本项目显式实现的低秩线性封装，不依赖 PEFT；日志包含可训练参数、LoRA 目标、模型和索引哈希、显存、损失和验证指标。类别短模板只是来源标签，不保证逐图病征可见。
+
+本实现按照 [Salesforce BLIP 原始检索代码](https://github.com/salesforce/BLIP/blob/main/models/blip_retrieval.py) 将 ITM 文本首 token 替换为 `[ENC]`；发布的 tokenizer 文件未列出 `[DEC]` 和 `[ENC]`，但模型有对应扩展词嵌入，因此运行时按 [原始 tokenizer 初始化顺序](https://github.com/salesforce/BLIP/blob/main/models/blip.py) 添加并校验 ID，不改动下载的 tokenizer 文件。
+
+下文保留早期讨论中的超参数建议；若与本节或当前 `configs/banana.yaml` 不同，以实际配置为准。
 
 ## 1. 研究设定
 

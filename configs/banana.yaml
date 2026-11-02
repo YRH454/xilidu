@@ -1,0 +1,23 @@
+# Paths are relative to the repository root. Data and models stay outside Git.
+data_root: ../四作物图文匹配实验数据_20261101
+checkpoint_dir: ../model-assets/blip-itm-base-coco-bed8ad38
+checkpoint_repo: Salesforce/blip-itm-base-coco
+checkpoint_revision: bed8ad38cb2d04a5a4bdf2d071b3c3c0a4aa724c
+checkpoint_safetensors_sha256: 1f6a317de217900da9b16b6b605eb7ec174f53db8c7a3f944af7650d418f6b12
+output_root: ../runs/banana_abcd_seed42
+seed: 42
+epochs: 8
+batch_size: 8
+gradient_accumulation: 2
+max_text_tokens: 320
+learning_rate_lora_itm: 0.0001
+learning_rate_classifier: 0.0005
+weight_decay: 0.01
+warmup_fraction: 0.05
+global_loss_weight: 0.2
+rank: 8
+alpha: 16
+lora_dropout: 0.05
+last_layers: 4
+mixed_precision: true
+num_workers: 2
